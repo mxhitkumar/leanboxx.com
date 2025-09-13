@@ -1,0 +1,19 @@
+# Create Django project
+django-admin startproject config .
+
+# Move settings into a package
+mkdir config/settings
+mv config/settings.py config/settings/base.py
+touch config/settings/{__init__.py,dev.py,prod.py}
+
+# Create apps folder
+mkdir apps && cd apps
+django-admin startapp users
+django-admin startapp core
+cd ..
+
+# Create other folders
+mkdir scripts static media nginx
+touch scripts/{entrypoint.sh,backup_db.sh}
+touch nginx/nginx.conf
+touch .env.example
