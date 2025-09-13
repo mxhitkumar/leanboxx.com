@@ -17,3 +17,175 @@ mkdir scripts static media nginx
 touch scripts/{entrypoint.sh,backup_db.sh}
 touch nginx/nginx.conf
 touch .env.example
+
+
+# =================================sh file=============================================
+
+#!/bin/bash
+
+# =============== CONFIG ===============
+PROJECT_NAME="myproject"
+APP1="users"
+APP2="core"
+DJANGO_VERSION="4.2"   # or latest LTS
+PYTHON_VERSION="python3"
+# ======================================
+
+echo "🚀 Setting up Django project: $PROJECT_NAME"
+
+# 1. Create project folder & virtualenv
+mkdir $PROJECT_NAME && cd $PROJECT_NAME
+$PYTHON_VERSION -m venv venv
+source venv/bin/activate
+
+# 2. Install Django + dependencies
+pip install --upgrade pip
+pip install django==$DJANGO_VERSION djangorestframework psycopg2-binary django-redis boto3 django-storages gunicorn
+
+# 3. Create Django project
+django-admin startproject config .
+
+# 4. Restructure settings
+mkdir config/settings
+mv config/settings.py config/settings/base.py
+touch config/settings/{__init__.py,dev.py,prod.py}
+
+# 5. Create apps folder & apps
+mkdir apps && cd apps
+django-admin startapp $APP1
+django-admin startapp $APP2
+cd ..
+
+# 6. Create other folders
+mkdir scripts static media nginx
+touch scripts/{entrypoint.sh,backup_db.sh}
+touch nginx/nginx.conf
+touch .env.example
+touch Dockerfile docker-compose.yml requirements.txt .gitignore
+
+# 7. Add requirements.txt
+cat > requirements.txt <<EOL
+Django==$DJANGO_VERSION
+djangorestframework
+psycopg2-binary
+django-redis
+boto3
+django-storages
+gunicorn
+EOL
+
+# 8. Add .gitignore
+cat > .gitignore <<EOL
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+*.sqlite3
+*.log
+.env
+static/
+media/
+EOL
+
+# 9. Add example .env
+cat > .env.example <<EOL
+SECRET_KEY=supersecretkey
+DEBUG=False
+ALLOWED_HOSTS=mydomain.com
+
+DB_NAME=mydb
+DB_USER=myuser
+DB_PASSWORD=mypassword
+DB_HOST=db
+DB_PORT=5432
+
+REDIS_URL=redis://redis:6379/1
+EOL
+
+# 10. Add Dockerfile
+cat > Dockerfile <<EOL
+FROM python:3.11-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+RUN python manage.py collectstatic --noinput
+
+CMD ["gunicorn", "config.wsgi:application", "--workers=4", "--bind=0.0.0.0:8000"]
+EOL
+
+# 11. Add docker-compose.yml
+cat > docker-compose.yml <<EOL
+version: "3.9"
+services:
+  web:
+    build: .
+    command: gunicorn config.wsgi:application --workers=4 --bind 0.0.0.0:8000
+    volumes:
+      - .:/app
+    env_file: .env
+    depends_on:
+      - db
+      - redis
+    ports:
+      - "8000:8000"
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD=mypassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./static:/static
+      - ./media:/media
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+EOL
+
+# 12. Add nginx.conf
+cat > nginx/nginx.conf <<EOL
+server {
+    listen 80;
+
+    location /static/ {
+        alias /static/;
+    }
+
+    location /media/ {
+        alias /media/;
+    }
+
+    location / {
+        proxy_pass http://web:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOL
+
+echo "✅ Django project $PROJECT_NAME setup complete!"
+echo ""
+echo "👉 Next steps:"
+echo "1. cd $PROJECT_NAME"
+echo "2. cp .env.example .env (edit values)"
+echo "3. docker-compose up --build"
+echo "4. Access app at http://localhost"
